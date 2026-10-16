@@ -1065,13 +1065,9 @@ def choose_model(a, models: Path, inst: dict) -> tuple:
         if first is None:
             fail(why, "--gguf-dir takes the folder that holds the GLM-5.3-Flash .gguf files, or the (first) .gguf file")
         return "local", first
-    hip = getattr(a, "backend", None) == "hip"
     if a.model:
-        if hip and is_exl3(a.model):
-            fail(f"{a.model} runs on NVIDIA GPUs only (the HIP port has no EXL3 kernels)",
-                 f"pick another model: {ME} --setup")
         return "download", a.model
-    opts = [q for q in MODELS if not (hip and is_exl3(q))]   # (EXL3: NVIDIA only)
+    opts = [q for q in MODELS]
     # cards of 24 GB or less: Maya-S24 (its 4-bit attention leaves ~1.5 GB more of the card for experts - decode about
     # 14% faster there), else Maya-S
     try:
@@ -2922,8 +2918,12 @@ def main() -> int:
     have = configs() if a.config is None else [a.config.resolve()]   # (--config: that one, no question)
     if a.backend:
         have = [p for p in have if read_json(p).get("backend", "cuda") == a.backend]
+    elif have:
+        a.backend = "hip" if read_json(have[0]).get("backend") == "hip" else "cuda"
     else:
-        a.backend = "hip" if have and read_json(have[0]).get("backend") == "hip" else "cuda"
+        # nothing set up yet (START-MAYA.bat / ./maya.sh without --backend): HIP on a PC with a supported AMD GPU
+        # and no NVIDIA one, e.g. Strix Halo
+        a.backend = "hip" if not S.gpus() and any(g["arch"] in HIP_ARCHS for g in S.amd_gpus()) else "cuda"
     setting_up = a.setup or a.check or a.gguf_dir or a.model or a.rebuild or a.repack or a.download_model
     if have and not setting_up and (a.calibrate or a.speed_calibration or not a.no_start):
         pick = have[0]
