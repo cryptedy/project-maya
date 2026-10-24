@@ -1385,16 +1385,20 @@ struct Model::Impl {
     std::vector<std::array<uint8_t*, 2>> ram_part;   // slot -> its parts
     std::vector<std::array<size_t, 4>> cp_lay;       // layer -> part offsets of gate, up, down rows; a part's bytes
     std::vector<int> copy_spare;                      // layer -> its spare slot (-1: none)
-    // DS4_COPY_SWAP=1 (copy mode, opt-in): the copies follow the routes, as the RAM tier's do. DISK_SKIP_W never computes
+    // MAYA_DS4_COPY_SWAP=1 (copy mode, opt-in; read as STRATA_DS4_COPY_SWAP, DS4_COPY_SWAP too): the copies follow the routes, as the RAM tier's do. DISK_SKIP_W never computes
     // an expert it leaves out, so its pages never come off the SSD and it is left out wherever it is picked light, all
     // through a conversation; but its heat counts those picks too. A layer's hottest expert read from the files takes
-    // the place of its coldest copy when it beats it by DS4_COPY_SWAP_MARGIN x + 1 (1.25): read by a thread of its own
+    // the place of its coldest copy when it beats it by MAYA_DS4_COPY_SWAP_MARGIN x + 1 (1.25): read by a thread of its own
     // into the layer's free slot, switched between windows, the coldest's slot then the free one. One move at a time,
-    // at most one every DS4_COPY_SWAP_EVERY tokens (8). The copies keep their RAM (a slot a layer more), so nothing else
+    // at most one every MAYA_DS4_COPY_SWAP_EVERY tokens (8). The copies keep their RAM (a slot a layer more), so nothing else
     // leaves the page cache for them. (The idea: Abyss's RAM fill for its disk tail skip - zephel01/Abyss v1.3.46,
     // issue #8 there.)
+    static const char* cs_env(const char* name) {   // STRATA_DS4_<name> (the MAYA_ name's), else DS4_<name>
+        const char* v = std::getenv((std::string("STRATA_DS4_") + name).c_str());
+        return v != nullptr ? v : std::getenv((std::string("DS4_") + name).c_str());
+    }
     bool copy_swap = [] {
-        const char* v = std::getenv("DS4_COPY_SWAP");
+        const char* v = cs_env("COPY_SWAP");
         return v != nullptr && std::atoi(v) != 0;
     }();
     float cs_margin = 1.25f;
@@ -3104,8 +3108,8 @@ struct Model::Impl {
         if (!place_experts(err)) return false;
         if (!load_experts(err)) return false;
         if (copy_swap && copy_mode) {   // (DS4_COPY_SWAP: after the copies)
-            if (const char* v = std::getenv("DS4_COPY_SWAP_MARGIN")) cs_margin = (float) std::atof(v);
-            if (const char* v = std::getenv("DS4_COPY_SWAP_EVERY")) cs_every = std::max(1, std::atoi(v));
+            if (const char* v = cs_env("COPY_SWAP_MARGIN")) cs_margin = (float) std::atof(v);
+            if (const char* v = cs_env("COPY_SWAP_EVERY")) cs_every = std::max(1, std::atoi(v));
             cs_th = std::thread([this] { cs_loop(); });
             int nfree = 0;
             for (int f : cs_free) nfree += f >= 0;
